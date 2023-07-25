@@ -42,9 +42,10 @@ class GfxContext { friend class GfxInternal; uint64_t handle; char name[kGfxCons
 
 enum GfxCreateContextFlag
 {
-    kGfxCreateContextFlag_EnableDebugLayer       = 1 << 0,
-    kGfxCreateContextFlag_EnableShaderDebugging  = 1 << 1,
-    kGfxCreateContextFlag_EnableStablePowerState = 1 << 2
+    kGfxCreateContextFlag_EnableDebugLayer         = 1 << 0,
+    kGfxCreateContextFlag_EnableShaderDebugging    = 1 << 1,
+    kGfxCreateContextFlag_EnableStablePowerState   = 1 << 2,
+    kGfxCreateContextFlag_ExperimentalShaderModels = 1 << 3
 };
 typedef uint32_t GfxCreateContextFlags;
 
@@ -1251,6 +1252,17 @@ public:
                 debug_controller->SetEnableSynchronizedCommandQueueValidation(true);
                 debug_controller->Release();
             }
+        }
+        if((flags & kGfxCreateContextFlag_ExperimentalShaderModels) != 0)
+        {
+            if (IsDeveloperModeEnabled())
+            {
+                IID experimental_features[] = {D3D12ExperimentalShaderModels};
+                if(!SUCCEEDED(D3D12EnableExperimentalFeatures(ARRAYSIZE(experimental_features), experimental_features, NULL, NULL)))
+                    GFX_PRINTLN("Warning: Unable to enable D3D12 ExperimentalShaderModels, creating unsigned shaders will fail");
+            }
+            else
+                GFX_PRINTLN("Warning: kGfxCreateContextFlag_ExperimentalShaderModels requires developer mode is enabled");
         }
         IDXGIFactory4 *factory = nullptr;
         if(!SUCCEEDED(CreateDXGIFactory1(IID_PPV_ARGS(&factory))))

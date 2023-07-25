@@ -441,6 +441,8 @@ GfxBuffer gfxCreateBuffer(GfxContext context, ID3D12Resource *resource, D3D12_RE
 GfxTexture gfxCreateTexture(GfxContext context, ID3D12Resource *resource, D3D12_RESOURCE_STATES resource_state = D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
 GfxAccelerationStructure gfxCreateAccelerationStructure(GfxContext context, ID3D12Resource *resource, uint64_t byte_offset = 0);    // resource must be in D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE state
 
+GfxResult gfxAllowTextureUAV(GfxContext context, GfxTexture texture);
+
 ID3D12Resource *gfxBufferGetResource(GfxContext context, GfxBuffer buffer);
 ID3D12Resource *gfxTextureGetResource(GfxContext context, GfxTexture texture);
 ID3D12Resource *gfxAccelerationStructureGetResource(GfxContext context, GfxAccelerationStructure acceleration_structure);
@@ -4326,6 +4328,15 @@ public:
         gfx_buffer.resource_ = resource;
         resource->AddRef(); // retain
         return acceleration_structure;
+    }
+
+    GfxResult allowTextureUAV(GfxTexture const &texture)
+    {
+        if(!texture)
+            return kGfxResult_NoError;
+        if(!texture_handles_.has_handle(texture.handle))
+            return GFX_SET_ERROR(kGfxResult_InvalidOperation, "Cannot allow UAV for an invalid texture object");
+        return ensureTextureHasUsageFlag(textures_[texture], D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
     }
 
     ID3D12Resource *getBufferResource(GfxBuffer const &buffer)
@@ -9121,6 +9132,13 @@ GfxAccelerationStructure gfxCreateAccelerationStructure(GfxContext context, ID3D
     GfxInternal *gfx = GfxInternal::GetGfx(context);
     if(!gfx) return acceleration_structure; // invalid context
     return gfx->createAccelerationStructure(resource, byte_offset);
+}
+
+GfxResult gfxAllowTextureUAV(GfxContext context, GfxTexture texture)
+{
+    GfxInternal *gfx = GfxInternal::GetGfx(context);
+    if(!gfx) return kGfxResult_InvalidParameter;
+    return gfx->allowTextureUAV(texture);
 }
 
 ID3D12Resource *gfxBufferGetResource(GfxContext context, GfxBuffer buffer)

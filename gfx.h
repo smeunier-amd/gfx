@@ -460,6 +460,10 @@ ID3D12Resource *gfxAccelerationStructureGetResource(GfxContext context, GfxAccel
 D3D12_RESOURCE_STATES gfxBufferGetResourceState(GfxContext context, GfxBuffer buffer);
 D3D12_RESOURCE_STATES gfxTextureGetResourceState(GfxContext context, GfxTexture texture);
 
+GfxResult gfxTextureChangeResourceState(GfxContext context, GfxTexture texture, D3D12_RESOURCE_STATES state);
+GfxResult gfxTextureSetResourceState(GfxContext context, GfxTexture texture, D3D12_RESOURCE_STATES state);
+GfxResult gfxTextureEnsureHasUsageFlag(GfxContext context, GfxTexture texture, D3D12_RESOURCE_FLAGS usage_flag);
+
 //!
 //! Template helpers.
 //!
@@ -4510,6 +4514,33 @@ public:
             return D3D12_RESOURCE_STATE_COMMON; // invalid texture object
         Texture const &gfx_texture = textures_[texture];
         return gfx_texture.resource_state_;
+    }
+
+    GfxResult changeTextureResourceState(GfxTexture const &texture, D3D12_RESOURCE_STATES state)
+    {
+        if(!texture_handles_.has_handle(texture.handle))
+            return GFX_SET_ERROR(kGfxResult_InvalidParameter, "Cannot set resource state of an invalid texture object");
+        Texture &gfx_texture = textures_[texture];
+        transitionResource(gfx_texture, state);
+        submitPipelineBarriers();
+        return kGfxResult_NoError;
+    }
+
+    GfxResult setTextureResourceState(GfxTexture const &texture, D3D12_RESOURCE_STATES state)
+    {
+        if(!texture_handles_.has_handle(texture.handle))
+            return GFX_SET_ERROR(kGfxResult_InvalidParameter, "Cannot set resource state of an invalid texture object");
+        Texture &gfx_texture = textures_[texture];
+        gfx_texture.resource_state_ = state;
+        return kGfxResult_NoError;
+    }
+
+    GfxResult ensureTextureHasUsageFlag(GfxTexture const &texture, D3D12_RESOURCE_FLAGS usage_flag)
+    {
+        if(!texture_handles_.has_handle(texture.handle))
+            return GFX_SET_ERROR(kGfxResult_InvalidParameter, "Cannot set resource state of an invalid texture object");
+        Texture &gfx_texture = textures_[texture];
+        return ensureTextureHasUsageFlag(gfx_texture, usage_flag);
     }
 
     void resetState()
@@ -9671,6 +9702,27 @@ D3D12_RESOURCE_STATES gfxTextureGetResourceState(GfxContext context, GfxTexture 
     GfxInternal *gfx = GfxInternal::GetGfx(context);
     if(!gfx) return D3D12_RESOURCE_STATE_COMMON;    // invalid context
     return gfx->getTextureResourceState(texture);
+}
+
+GfxResult gfxTextureChangeResourceState(GfxContext context, GfxTexture texture, D3D12_RESOURCE_STATES state)
+{
+    GfxInternal *gfx = GfxInternal::GetGfx(context);
+    if(!gfx) return kGfxResult_InvalidParameter;    // invalid context
+    return gfx->changeTextureResourceState(texture, state);
+}
+
+GfxResult gfxTextureSetResourceState(GfxContext context, GfxTexture texture, D3D12_RESOURCE_STATES state)
+{
+    GfxInternal *gfx = GfxInternal::GetGfx(context);
+    if(!gfx) return kGfxResult_InvalidParameter;    // invalid context
+    return gfx->setTextureResourceState(texture, state);
+}
+
+GfxResult gfxTextureEnsureHasUsageFlag(GfxContext context, GfxTexture texture, D3D12_RESOURCE_FLAGS usage_flag)
+{
+    GfxInternal *gfx = GfxInternal::GetGfx(context);
+    if(!gfx) return kGfxResult_InvalidParameter;    // invalid context
+    return gfx->ensureTextureHasUsageFlag(texture, usage_flag);
 }
 
 #endif //! GFX_IMPLEMENTATION_DEFINE

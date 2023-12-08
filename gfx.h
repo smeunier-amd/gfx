@@ -316,7 +316,7 @@ struct GfxLocalRootSignatureAssociation
 
 GfxKernel gfxCreateMeshKernel(GfxContext context, GfxProgram program, char const *entry_point = nullptr, char const **defines = nullptr, uint32_t define_count = 0);    // draws to back buffer
 GfxKernel gfxCreateMeshKernel(GfxContext context, GfxProgram program, GfxDrawState draw_state, char const *entry_point = nullptr, char const **defines = nullptr, uint32_t define_count = 0);
-GfxKernel gfxCreateComputeKernel(GfxContext context, GfxProgram program, char const *entry_point = nullptr, char const **defines = nullptr, uint32_t define_count = 0);
+GfxKernel gfxCreateComputeKernel(GfxContext context, GfxProgram program, char const *entry_point = nullptr, char const **defines = nullptr, uint32_t define_count = 0, char const **define_values = nullptr);
 GfxKernel gfxCreateGraphicsKernel(GfxContext context, GfxProgram program, char const *entry_point = nullptr, char const **defines = nullptr, uint32_t define_count = 0);    // draws to back buffer
 GfxKernel gfxCreateGraphicsKernel(GfxContext context, GfxProgram program, GfxDrawState draw_state, char const *entry_point = nullptr, char const **defines = nullptr, uint32_t define_count = 0);
 GfxKernel gfxCreateRaytracingKernel(GfxContext context, GfxProgram program,
@@ -1157,6 +1157,7 @@ class GfxInternal
         Type type_ = kType_Count;
         DrawState::Data draw_state_;
         std::vector<String> defines_;
+        std::vector<String> define_values_;
         std::vector<String> exports_;
         std::vector<String> subobjects_;
         std::map<std::wstring, LocalRootSignatureAssociation> local_root_signature_associations_;
@@ -2861,7 +2862,7 @@ public:
         return mesh_kernel;
     }
 
-    GfxKernel createComputeKernel(GfxProgram const &program, char const *entry_point, char const **defines, uint32_t define_count)
+    GfxKernel createComputeKernel(GfxProgram const &program, char const *entry_point, char const **defines, uint32_t define_count, char const **define_values=nullptr)
     {
         GfxKernel compute_kernel = {};
         if(!program_handles_.has_handle(program.handle))
@@ -2880,6 +2881,8 @@ public:
         gfx_kernel.type_ = Kernel::kType_Compute;
         GFX_ASSERT(define_count == 0 || defines != nullptr);
         for(uint32_t i = 0; i < define_count; ++i) gfx_kernel.defines_.push_back(defines[i]);
+        if (define_values != nullptr)
+            for(uint32_t i = 0; i < define_count; ++i) gfx_kernel.define_values_.push_back(define_values[i]);
         gfx_kernel.num_threads_ = (uint32_t *)malloc(3 * sizeof(uint32_t)); for(uint32_t i = 0; i < 3; ++i) gfx_kernel.num_threads_[i] = 1;
         createKernel(gfx_program, gfx_kernel);  // create compute kernel
         if(!gfx_program.file_name_ && (gfx_kernel.root_signature_ == nullptr || gfx_kernel.pipeline_state_ == nullptr))
@@ -8295,8 +8298,11 @@ private:
         GFX_ASSERT(shader_type < kShaderType_Count);
 
         if(program.file_name_)
-        {
-            GFX_SNPRINTF(shader_file, sizeof(shader_file), "%s/%s%s", program.file_path_.c_str(), program.file_name_.c_str(), shader_extensions_[shader_type]);
+        {   
+            char const* shader_extension = "";
+            if (strrchr(program.file_name_.c_str(), '.') == nullptr)
+                shader_extension = shader_extensions_[shader_type];
+            GFX_SNPRINTF(shader_file, sizeof(shader_file), "%s/%s%s", program.file_path_.c_str(), program.file_name_.c_str(), shader_extension);
             mbstowcs(wshader_file, shader_file, ARRAYSIZE(shader_file));
             // Check file existence before LoadFile call. LoadFile spams hlsl::Exception messages if file not found.
             if(GetFileAttributesW(wshader_file) == INVALID_FILE_ATTRIBUTES) return;
@@ -8405,17 +8411,35 @@ private:
         std::vector<std::wstring> user_defines;
         if(!kernel.defines_.empty())
         {
-            size_t max_define_length = 0;
-            for(size_t i = 0; i < kernel.defines_.size(); ++i)
-                max_define_length = GFX_MAX(max_define_length, strlen(kernel.defines_[i].c_str()));
-            max_define_length += 3; // `//' + null terminator: https://github.com/gboisse/gfx/issues/41
-            std::vector<WCHAR> wdefine(max_define_length << 1);
-            std::vector<char> define(max_define_length);
-            for(size_t i = 0; i < kernel.defines_.size(); ++i)
+            if(!kernel.define_values_.empty())
             {
-                GFX_SNPRINTF(define.data(), max_define_length, "%s//", kernel.defines_[i].c_str());
-                mbstowcs(wdefine.data(), define.data(), max_define_length);
-                user_defines.push_back(wdefine.data());
+                size_t max_define_length = 0;
+                for(size_t i = 0; i < kernel.defines_.size(); ++i)
+                    max_define_length = GFX_MAX(max_define_length, strlen(kernel.defines_[i].c_str()) + strlen(kernel.define_values_[i].c_str()));
+                max_define_length += 4; // '=' + "//" + null terminator
+                std::vector<WCHAR> wdefine(max_define_length << 1);
+                std::vector<char> define(max_define_length);
+                for(size_t i = 0; i < kernel.defines_.size(); ++i)
+                {
+                    GFX_SNPRINTF(define.data(), max_define_length, "%s=%s//", kernel.defines_[i].c_str(), kernel.define_values_[i].c_str());
+                    mbstowcs(wdefine.data(), define.data(), max_define_length);
+                    user_defines.push_back(wdefine.data());
+                }
+            }
+            else
+            {
+                size_t max_define_length = 0;
+                for(size_t i = 0; i < kernel.defines_.size(); ++i)
+                    max_define_length = GFX_MAX(max_define_length, strlen(kernel.defines_[i].c_str()));
+                max_define_length += 3; // `//' + null terminator: https://github.com/gboisse/gfx/issues/41
+                std::vector<WCHAR> wdefine(max_define_length << 1);
+                std::vector<char> define(max_define_length);
+                for(size_t i = 0; i < kernel.defines_.size(); ++i)
+                {
+                    GFX_SNPRINTF(define.data(), max_define_length, "%s//", kernel.defines_[i].c_str());
+                    mbstowcs(wdefine.data(), define.data(), max_define_length);
+                    user_defines.push_back(wdefine.data());
+                }
             }
             for(size_t i = 0; i < user_defines.size(); ++i)
             {
@@ -9226,12 +9250,12 @@ GfxKernel gfxCreateMeshKernel(GfxContext context, GfxProgram program, GfxDrawSta
     return gfx->createMeshKernel(program, draw_state, entry_point, defines, define_count);
 }
 
-GfxKernel gfxCreateComputeKernel(GfxContext context, GfxProgram program, char const *entry_point, char const **defines, uint32_t define_count)
+GfxKernel gfxCreateComputeKernel(GfxContext context, GfxProgram program, char const *entry_point, char const **defines, uint32_t define_count, char const **define_values)
 {
     GfxKernel const compute_kernel = {};
     GfxInternal *gfx = GfxInternal::GetGfx(context);
     if(!gfx) return compute_kernel; // invalid context
-    return gfx->createComputeKernel(program, entry_point, defines, define_count);
+    return gfx->createComputeKernel(program, entry_point, defines, define_count, define_values);
 }
 
 GfxKernel gfxCreateGraphicsKernel(GfxContext context, GfxProgram program, char const *entry_point, char const **defines, uint32_t define_count)
